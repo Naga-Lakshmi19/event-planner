@@ -1,31 +1,38 @@
+
+version: "3.8"
+
 services:
   app:
     build: .
     ports:
       - "8000:80"
     depends_on:
-      mongodb:
-        condition: service_started
+      - mongodb
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
       APP_URL: http://localhost:8000
 
       DB_CONNECTION: mongodb
-      DB_URI: mongodb://mongodb:27017/event_manager
+      # Prefer a single connection string if your app supports it:
+      MONGODB_URI: mongodb://mongodb:27017/event_manager
+      # Optional discrete settings (some apps still read these):
+      DB_HOST: mongodb
+      DB_PORT: 27017
 
-      # Pass APP_KEY from your host machine
+      # Pass APP_KEY from your host machine (ensure it's set in your shell or .env)
       APP_KEY: ${APP_KEY}
 
-    command: >
-      bash -c "
-      mkdir -p storage/framework/{sessions,cache,views} &&
+    command: >-
+      bash -lc "
+      mkdir -p storage/framework/{sessions,cache,views} bootstrap/cache &&
       chown -R www-data:www-data storage bootstrap/cache &&
       php artisan optimize:clear &&
       php artisan config:cache &&
       php artisan route:cache &&
-      php artisan view:cache ||
-      echo 'Skipping view cache...' &&
+      php artisan view:cache || echo 'Skipping view cache...' &&
+      php artisan migrate --force &&
+      php artisan db:seed --force &&
       apache2-foreground
       "
 
@@ -42,7 +49,10 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "echo", "db.runCommand({ ping: 1 })", "|", "mongosh", "mongodb://localhost:27017/admin"]
+      # Use CMD-SHELL so pipes/eval work properly
+      test: >
+        CMD-SHELL
+        mongosh --quiet --eval "db.adminCommand({ ping: 1 })" "mongodb://localhost:27017/admin"
       interval: 10s
       timeout: 5s
       retries: 5
